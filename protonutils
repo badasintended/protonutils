@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-${HOME}/.config}"
+CONFIG_FILE="${CONFIG_DIR}/protonutils.conf"
+
+if [[ ! -f "${CONFIG_FILE}" ]]; then
+	cat > "${CONFIG_FILE}" <<-EOF
+	STEAM_DIR="\${HOME}/.steam/steam"
+	PROTON_DIR="\${STEAM_DIR}/steamapps/common/Proton - Experimental"
+	WINETRICKS_BIN="/usr/bin/winetricks"
+	EOF
+  	echo "Please edit the config file at ${CONFIG_FILE} first."
+	exit 0
+fi
+
+source "${CONFIG_FILE}"
+
+APP_ID=""
+
+##########
+
+print_help() {
+	cat <<-EOF
+	protonutils [ARGS] --appid=APP_ID COMMAND
+
+	Arguments
+	--help          Print help.
+	--proton=PATH   Set proton directory, see config at ${CONFIG_FILE} for default dir.
+	--appid=APP_ID
+
+	Commands
+	winetricks [WINETRICKS_CMD...]   Run winetricks on this app's wine prefix. 
+	run	[EXE]                        Run exe with proton in this app's prefix.
+	EOF
+}
+
+check_app_id() {
+	if [[ -z "$APP_ID" ]]; then
+		echo "Missing app id, see --help."
+		exit 1
+	fi
+}
+
+run_winetricks() {
+	check_app_id
+
+	env \
+		WINE="${PROTON_DIR}/files/bin/wine" \
+		WINEDLLPATH="${PROTON_DIR}/files/lib/wine;${PROTON_DIR}/files/lib/wine" \
+		WINEPREFIX="${STEAM_DIR}/steamapps/compatdata/${APP_ID}/pfx" \
+		"${WINETRICKS_BIN}" ${@:1}
+}
+
+run_exe() {
+	check_app_id
+
+	env \
+		STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_DIR}" \
+		STEAM_COMPAT_DATA_PATH="${STEAM_DIR}/steamapps/compatdata/${APP_ID}" \
+		"$PROTON_DIR/proton" run ${@:1}
+}
+
+parse_args() {
+	if [[ $# == 0 ]]; then
+		exit 0
+	fi
+
+	case "$1" in
+		"--help"|"-h") 
+			print_help
+		;;
+
+		"--appid="*)
+			APP_ID="${1#*=}"
+			parse_args ${@:2}
+		;;
+
+		"--proton="*)
+			PROTON_DIR="${1#*=}"
+			parse_args ${@:2}
+		;;
+
+		"winetricks")
+			run_winetricks ${@:2}
+		;;
+
+		"run")
+			run_exe ${@:2}
+		;;
+
+		*)
+			echo "Unknown command, see --help."
+		;;
+	esac
+}
+
+##########
+
+if [[ $# == 0 ]]; then
+	print_help
+	exit 0
+fi
+
+parse_args $@
